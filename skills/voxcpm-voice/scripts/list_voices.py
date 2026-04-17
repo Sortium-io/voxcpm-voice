@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _console  # noqa: F401, E402  — reconfigures stdout to UTF-8 on Windows
 from _library import LIBRARY_ROOT, has_reference, list_voices, samples_dir, lines_dir  # noqa: E402
 
 

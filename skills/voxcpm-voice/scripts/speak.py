@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _console  # noqa: F401, E402  — reconfigures stdout to UTF-8 on Windows
 from _library import (  # noqa: E402
     VoiceMeta,
     lines_dir,

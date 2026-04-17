@@ -23,6 +23,9 @@ import shutil
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _console  # noqa: F401, E402  — reconfigures stdout to UTF-8 on Windows
+
 TEMPLATE_RELATIVE = "../templates/voicelines.yaml"
 
 VO_README = """# VO directory
@@ -107,8 +110,11 @@ def write_if_absent(path: Path, content: str, force: bool, label: str) -> None:
 def main() -> None:
     args = parse_args()
     project = args.path.expanduser().resolve()
-    if not project.is_dir():
-        sys.exit(f"Project path not found or not a directory: {project}")
+    if project.exists() and not project.is_dir():
+        sys.exit(f"Project path exists but is a file, not a directory: {project}")
+    if not project.exists():
+        project.mkdir(parents=True, exist_ok=True)
+        print(f"[init_project] created project dir {project}")
 
     vo = project / "vo"
     audio = vo / "audio"

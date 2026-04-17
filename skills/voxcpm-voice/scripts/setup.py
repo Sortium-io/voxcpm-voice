@@ -25,6 +25,9 @@ import sys
 import venv
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _console  # noqa: F401, E402  — reconfigures stdout to UTF-8 on Windows
+
 WORK_DIR = Path.home() / "voxcpm-voice"
 VENV_DIR = WORK_DIR / "voxcpm-venv"
 OUTPUTS_DIR = WORK_DIR / "outputs"
@@ -77,14 +80,46 @@ def pip_install(py: Path, args: list[str], label: str) -> None:
     subprocess.check_call([str(py), "-m", "pip", "install", "--quiet", *args])
 
 
+def find_compatible_python() -> str | None:
+    """On Windows, use the `py` launcher to find Python 3.10–3.12 if the current one's too new."""
+    if not IS_WINDOWS:
+        return None
+    py_launcher = shutil.which("py")
+    if not py_launcher:
+        return None
+    for ver in ("3.12", "3.11", "3.10"):
+        try:
+            subprocess.run([py_launcher, f"-{ver}", "--version"],
+                           check=True, capture_output=True)
+            return f"py -{ver}"
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+    return None
+
+
+def require_compatible_python() -> None:
+    ver = sys.version.split()[0]
+    if sys.version_info < (3, 10):
+        sys.exit(f"[setup] Python 3.10–3.12 required. This interpreter is {ver}. "
+                 f"Install a compatible Python and rerun setup.py with it.")
+    if sys.version_info >= (3, 13):
+        suggestion = find_compatible_python()
+        msg = [f"[setup] Python 3.10–3.12 required. This interpreter is {ver}."]
+        msg.append("[setup] VoxCPM depends on PyTorch, and PyTorch doesn't ship wheels for 3.13+ yet.")
+        if suggestion:
+            msg.append(f"[setup] Found a compatible interpreter on this machine — rerun with:")
+            msg.append(f"[setup]     {suggestion} \"{Path(__file__).resolve()}\"")
+        elif IS_WINDOWS:
+            msg.append("[setup] On Windows, install Python 3.12 from python.org, then rerun with:")
+            msg.append('[setup]     py -3.12 "<path-to-setup.py>"')
+        else:
+            msg.append("[setup] Install Python 3.12 (pyenv / conda / your OS package manager) and rerun with that interpreter.")
+        sys.exit("\n".join(msg))
+
+
 def main() -> None:
     print(f"[setup] platform: {SYSTEM}  python: {sys.version.split()[0]}")
-
-    if sys.version_info < (3, 10):
-        sys.exit(f"[setup] Python 3.10+ required (running {sys.version.split()[0]}). "
-                 f"Install a newer Python and rerun.")
-    if sys.version_info >= (3, 13):
-        print("[setup] warning: VoxCPM is tested on Python <3.13; newer may work but isn't guaranteed")
+    require_compatible_python()
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
