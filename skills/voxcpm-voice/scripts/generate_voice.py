@@ -143,7 +143,7 @@ def main() -> None:
         extended = 0
         if not args.skip_padding:
             wav_np, extended = pad_silences(wav_np, sr)
-        sf.write(str(out_path), wav_np, sr)
+        sf.write(str(out_path), wav_np, sr, subtype="PCM_24")
         dur_audio = len(wav_np) / sr
         dur_wall = time.time() - t_start
         note = f"(padded {extended} gap{'s' if extended != 1 else ''})" if not args.skip_padding else ""

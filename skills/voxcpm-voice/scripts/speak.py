@@ -237,7 +237,7 @@ def main() -> None:
             wav_np = np.asarray(wav, dtype=np.float32)
             if not args.skip_padding:
                 wav_np, _ = pad_silences(wav_np, sr)
-            sf.write(str(out_path), wav_np, sr)
+            sf.write(str(out_path), wav_np, sr, subtype="PCM_24")
             dur_audio = len(wav_np) / sr
             dur_wall = time.time() - t_start
             total_wall += dur_wall

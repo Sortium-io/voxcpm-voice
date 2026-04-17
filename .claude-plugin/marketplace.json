@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Claude Code skill for designing, cloning, and reusing voices via VoxCPM2",
-    "version": "0.4.2"
+    "version": "0.4.3"
   },
   "plugins": [
     {
       "name": "voxcpm-voice",
       "source": "./",
       "description": "Design any voice from text OR clone an existing voice from an audio clip. Save to a local library, then generate voicelines / narration via Ultimate Cloning. Steer delivery with Controllable Cloning directives. YAML batches for VO banks. Project scaffolding for in-project output. Cross-platform (macOS/Linux/Windows) with automatic CUDA detection.",
-      "version": "0.4.2",
+      "version": "0.4.3",
       "author": {
         "name": "Sortium"
       },

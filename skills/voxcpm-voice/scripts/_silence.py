@@ -4,17 +4,25 @@ Detects internal silence runs (amplitude below threshold for at least min_gap_ms
 and extends any gap shorter than target_ms up to target_ms. Leading and trailing
 silence is preserved as-is — we only extend silences between spoken segments.
 
-Extension strategy: *tile* the detected gap's own samples until we reach
-target_ms. This preserves whatever noise-floor texture VoxCPM produced in that
-gap, so there's no step discontinuity at the boundary between the existing gap
-and the padding. That discontinuity (noise-floor → true zero → noise-floor) is
-what caused audible clicks on CUDA bf16 output, where the noise floor sits
-~0.005 and the jump to exact 0.0 is in-band. Tiling makes the extension
-continuous with the surrounding room tone.
+Extension strategy: keep the original gap samples verbatim, then append
+Gaussian noise at the SAME RMS as the detected gap to reach target_ms, with a
+short crossfade at the join so there's no amplitude discontinuity. This avoids
+two different kinds of click artifact:
+
+  1. Filling with literal zeros produces a step from the model's noise floor
+     (~0.005 on CUDA bf16) down to exact 0.0 and back, which is audibly clicky.
+  2. Tiling the gap samples (previous approach) preserves one-shot transients
+     that VoxCPM can emit at sentence boundaries — a single tick becomes 2-3
+     ticks, sounding like rhythmic clicking.
+
+Matched-RMS Gaussian noise is continuous, non-repeating, and phase-neutral —
+it's just the gap's own room tone continuing naturally.
 """
 from __future__ import annotations
 
 import numpy as np
+
+_RNG = np.random.default_rng(42)  # deterministic across runs for reproducibility
 
 
 def find_internal_gaps(audio: np.ndarray, sr: int, threshold: float, min_gap_ms: int):
@@ -41,23 +49,37 @@ def find_internal_gaps(audio: np.ndarray, sr: int, threshold: float, min_gap_ms:
     return gaps
 
 
-def _extend_gap_by_tiling(gap_samples: np.ndarray, target_len: int) -> np.ndarray:
-    """Tile gap_samples (reversing every other rep) until the result is target_len long.
-
-    Reversing every other rep prevents a zero-crossing discontinuity at tile
-    boundaries — the end of rep N matches the start of rep N+1 sample-for-sample.
-    """
+def _extend_gap_with_noise(gap_samples: np.ndarray, target_len: int) -> np.ndarray:
+    """Fill to target_len with matched-RMS Gaussian noise, crossfaded at the join."""
+    if gap_samples.size >= target_len:
+        return gap_samples[:target_len]
     if gap_samples.size == 0:
-        return np.zeros(target_len, dtype=gap_samples.dtype)
-    chunks = []
-    covered = 0
-    flip = False
-    while covered < target_len:
-        chunk = gap_samples[::-1] if flip else gap_samples
-        chunks.append(chunk)
-        covered += chunk.size
-        flip = not flip
-    return np.concatenate(chunks)[:target_len].astype(gap_samples.dtype)
+        return np.zeros(target_len, dtype=np.float32).astype(gap_samples.dtype)
+
+    gap_f = gap_samples.astype(np.float32)
+    rms = float(np.sqrt(np.mean(gap_f ** 2)))
+    # Clamp to a perceptually silent floor if the gap really is pure zeros —
+    # keeps the noise *just* loud enough to avoid step discontinuities at the
+    # join but quiet enough to be imperceptible.
+    if rms < 1e-6:
+        rms = 1e-5
+
+    extra = target_len - gap_samples.size
+    noise = (_RNG.standard_normal(extra) * rms).astype(np.float32)
+
+    out = np.empty(target_len, dtype=np.float32)
+    out[:gap_samples.size] = gap_f
+    out[gap_samples.size:] = noise
+
+    # Crossfade the join (up to ~2.5 ms) so there's no amplitude step at the
+    # transition between original gap samples and appended noise.
+    fade_len = min(128, gap_samples.size, extra)
+    if fade_len > 0:
+        w = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
+        i = gap_samples.size - fade_len
+        out[i:i + fade_len] = gap_f[-fade_len:] * (1.0 - w) + noise[:fade_len] * w
+
+    return out.astype(gap_samples.dtype)
 
 
 def pad_silences(audio: np.ndarray, sr: int, threshold=0.01, min_gap_ms=200, target_ms=600):
@@ -73,7 +95,7 @@ def pad_silences(audio: np.ndarray, sr: int, threshold=0.01, min_gap_ms=200, tar
         run_len = end - start
         out.append(audio[cursor:start])  # audio leading up to the gap
         if run_len < target_len:
-            out.append(_extend_gap_by_tiling(audio[start:end], target_len))
+            out.append(_extend_gap_with_noise(audio[start:end], target_len))
             extended += 1
         else:
             out.append(audio[start:end])
