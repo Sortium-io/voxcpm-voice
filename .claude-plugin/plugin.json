@@ -1,7 +1,7 @@
 {
   "name": "voxcpm-voice",
   "description": "Design, import, save, and reuse voices with VoxCPM2. Create any voice from a text description (no reference audio needed) or import an existing audio clip to clone a real voice. Generate voicelines / narration in saved voices via Ultimate Cloning, or steer delivery on the fly with Controllable Cloning directives. YAML batches for VO banks and multi-voice scenes. Project scaffolding so rendered output lives next to your code.",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "author": {
     "name": "Sortium"
   },

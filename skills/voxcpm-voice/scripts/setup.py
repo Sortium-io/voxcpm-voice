@@ -107,11 +107,17 @@ def require_compatible_python() -> None:
         msg = [f"[setup] Python 3.10–3.12 required. This interpreter is {ver}."]
         msg.append("[setup] VoxCPM depends on PyTorch, and PyTorch doesn't ship wheels for 3.13+ yet.")
         if suggestion:
+            script = Path(__file__).resolve()
             msg.append(f"[setup] Found a compatible interpreter on this machine — rerun with:")
-            msg.append(f"[setup]     {suggestion} \"{Path(__file__).resolve()}\"")
+            msg.append(f'[setup]     {suggestion} "{script}"')
         elif IS_WINDOWS:
-            msg.append("[setup] On Windows, install Python 3.12 from python.org, then rerun with:")
+            msg.append("[setup] Install Python 3.12 and rerun with:")
             msg.append('[setup]     py -3.12 "<path-to-setup.py>"')
+            if shutil.which("winget"):
+                msg.append("[setup] winget is available — quickest path is:")
+                msg.append("[setup]     winget install --id Python.Python.3.12 -e")
+            else:
+                msg.append("[setup] Get Python 3.12 from https://www.python.org/downloads/")
         else:
             msg.append("[setup] Install Python 3.12 (pyenv / conda / your OS package manager) and rerun with that interpreter.")
         sys.exit("\n".join(msg))
