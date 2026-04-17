@@ -23,6 +23,7 @@ Claude picks the phase based on what the user asks for. Mental cues:
 - *"Take 2 is the one"* / *"save that"* / *"keep the first"* → **save** (`save_take.py`). Only applies to designed voices.
 - *"Have the drill sergeant say …"* / *"narrate this in Sam's voice"* / *"render these lines"* → **speak** (`speak.py`).
 - *"What voices do I have?"* → **list** (`list_voices.py`).
+- *"Set this up in my project"* / *"wire voxcpm-voice into this codebase"* / *"init vo here"* → **init** (`init_project.py`).
 
 ## Library layout
 
@@ -59,6 +60,7 @@ Any of these should trigger this skill:
 - "Render these voicelines for \<voice\>"
 - "What voices have I saved?" / "list my voices"
 - "Save take N" / "keep the first one" / "use that one for future lines"
+- "Set up voxcpm-voice in this project" / "init vo here" / "wire this into this codebase"
 
 **Do NOT invoke for**: long-form TTS unrelated to a saved voice (use a regular TTS tool instead); arbitrary transcription or audio editing (this skill generates speech, not the reverse).
 
@@ -88,15 +90,46 @@ Once a voice is in the library, `speak.py` renders new lines with consistent tim
 
 ### Step 0: Install VoxCPM if not already installed (idempotent)
 
-Run once, on first use. Skip if already installed:
+Run once, on first use. Skip if already installed. The setup script is cross-platform Python; pick the invocation for the user's OS:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/setup.sh"
+# macOS / Linux
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/setup.py"
+
+# Windows (PowerShell or cmd)
+python "%CLAUDE_PLUGIN_ROOT%\skills\voxcpm-voice\scripts\setup.py"
 ```
 
-`${CLAUDE_PLUGIN_ROOT}` is the plugin's install directory — Claude Code sets it automatically. Creates a venv at `~/voxcpm-voice/voxcpm-venv/` and installs torch + voxcpm + soundfile + numpy + pyyaml. Takes ~2 min on first run.
+`${CLAUDE_PLUGIN_ROOT}` is the plugin's install directory — Claude Code sets it automatically. Takes ~2 min on first run. The setup script:
+
+- Creates a venv at `~/voxcpm-voice/voxcpm-venv/` (Windows: `%USERPROFILE%\voxcpm-voice\voxcpm-venv\`)
+- Installs `torch` + `torchaudio` — **CUDA 12.1 wheels when `nvidia-smi` is on PATH** (Linux + Windows with NVIDIA cards), otherwise default wheels (macOS MPS, CPU elsewhere).
+- Installs `voxcpm` + `soundfile` + `numpy` + `pyyaml`.
 
 Model weights (~2 GB) download lazily on the first `generate()` call.
+
+**Platform-specific Python invocation for later steps**:
+
+- macOS / Linux: `~/voxcpm-voice/voxcpm-venv/bin/python`
+- Windows: `%USERPROFILE%\voxcpm-voice\voxcpm-venv\Scripts\python.exe`
+
+Pick the right one when invoking any of the other scripts below.
+
+### Step 0.5: Init the project (optional, but do it when appropriate)
+
+If the user is working inside a project (has a git repo, a source tree, etc.) and they want rendered voicelines to land in the project rather than the user-wide library, run init:
+
+```bash
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/init_project.py" \
+  --path /path/to/project
+```
+
+Creates `<project>/vo/` with `audio/` (rendered output), `scripts/` (YAML batches, starter `example.yaml` copied from the plugin template), and `README.md` (layout notes). Idempotent; safe to run twice.
+
+**When to init automatically**: the user says "set up voxcpm-voice in this project" / "init vo here" / "wire this into my codebase". Don't init unprompted in random directories — the user library works fine for one-off generations.
+
+**After init**, pass `--output-dir <project>/vo/audio` on `speak.py` invocations so WAVs land in the project. The voice *library* (voice.json, reference.wav, design samples) still lives at `~/voxcpm-voice/voices/` — that's machine-wide and shared across projects. Only rendered voicelines go into the project.
 
 ### Step 1: Design a voice (when the user wants to create one)
 
@@ -216,6 +249,14 @@ Works identically for designed and imported voices. If the user says "have \<voi
 The `--direction` flag prepends `(direction)` to the text before generation. Use when the user wants a specific delivery tweak (faster, angry, excited, whispered, etc.) rather than the default reading.
 
 **Warn the user** when they use `--direction`: this shifts the voice's delivery characteristics and may drift the timbre slightly from pure cloning. For "sound exactly like the original", skip direction. For "have them say this line angrily/softly/fast/etc.", it's the right tool.
+
+**Rendering into a project folder** (after `init_project.py` has been run in that project):
+
+```bash
+... --voice Drill_Sergeant --yaml <project>/vo/scripts/example.yaml --output-dir <project>/vo/audio
+```
+
+With `--output-dir`, WAVs land at `<output-dir>/<voice>/[<batch>/]<slug>.wav` instead of in the user library. Use this whenever the user is working inside a project they've initialized — it keeps their VO output alongside their code, which is what they want for version control and hand-off.
 
 **Full VO bank / multi-voice scene via YAML** (best when the user hands you a list):
 

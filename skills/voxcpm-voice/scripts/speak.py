@@ -115,6 +115,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--lines", nargs="+", help="Multiple lines to speak (one WAV per line).")
     ap.add_argument("--batch", default=None,
                     help="Group output under lines/<batch>/ (for --voice mode). YAML can set this too.")
+    ap.add_argument("--output-dir", type=Path, default=None,
+                    help="Write rendered WAVs here instead of the user library. "
+                         "Use this when rendering into a project's vo/audio folder. "
+                         "Layout becomes <output-dir>/<voice>/[<batch>/]<slug>.wav.")
     ap.add_argument("--direction", default="",
                     help="(direction) directive prepended to each line — e.g. 'slightly faster, angry'. "
                          "Steers delivery via VoxCPM's Controllable Cloning. Changes timbre/energy; use "
@@ -150,8 +154,13 @@ def build_jobs(args: argparse.Namespace) -> list[LineJob]:
     ]
 
 
-def target_paths(job: LineJob) -> list[Path]:
-    base = lines_dir(job.voice, job.batch)
+def target_paths(job: LineJob, output_override: Path | None = None) -> list[Path]:
+    if output_override is not None:
+        base = output_override / slugify(job.voice)
+        if job.batch:
+            base = base / slugify(job.batch)
+    else:
+        base = lines_dir(job.voice, job.batch)
     stem = slugify_short(job.text)
     if job.takes == 1:
         return [base / f"{stem}.wav"]
@@ -179,9 +188,12 @@ def main() -> None:
             )
         voices_used[job.voice] = meta
 
+    output_override = args.output_dir.expanduser().resolve() if args.output_dir else None
+    if output_override:
+        print(f"[speak] writing into project at {output_override}", flush=True)
     print(f"[speak] {len(jobs)} line(s) across {len(voices_used)} voice(s)", flush=True)
     for job in jobs:
-        for p in target_paths(job):
+        for p in target_paths(job, output_override):
             p.parent.mkdir(parents=True, exist_ok=True)
             print(f"  {job.voice:20s}  {p}")
 
@@ -218,7 +230,7 @@ def main() -> None:
             kwargs["prompt_wav_path"] = str(ref)
             kwargs["prompt_text"] = prompt_text
 
-        for out_path in target_paths(job):
+        for out_path in target_paths(job, output_override):
             t_start = time.time()
             wav = model.generate(**kwargs)
             wav_np = np.asarray(wav, dtype=np.float32)
