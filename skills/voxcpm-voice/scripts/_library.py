@@ -46,15 +46,25 @@ def voice_dir(name: str) -> Path:
 
 @dataclass
 class VoiceMeta:
-    """On-disk schema for voices/<name>/voice.json."""
+    """On-disk schema for voices/<name>/voice.json.
+
+    A voice can arrive two ways:
+      - designed: generate_voice.py rolled it from a text description. Samples
+        live in samples/; one is promoted to reference.wav.
+      - imported: import_voice.py took an external audio file and wrote it
+        directly to reference.wav. No samples. `source_audio` records where it
+        came from (for traceability; the skill doesn't need it at runtime).
+    """
     name: str
     voice_fantasy: str = ""
     emotion: str = ""
     chinese_hype: bool = True
     cfg_value: float = 2.0
     inference_timesteps: int = 10
-    lines: list[str] = field(default_factory=list)  # sentences actually spoken in the samples
-    reference_take: int | None = None                # which samples/t<N>.wav was promoted
+    lines: list[str] = field(default_factory=list)   # transcript of reference.wav
+    reference_take: int | None = None                 # which samples/t<N>.wav was promoted
+    imported: bool = False                            # True if from import_voice.py
+    source_audio: str = ""                            # original path (imports only)
     created_at: str = ""
     updated_at: str = ""
 
@@ -64,6 +74,9 @@ class VoiceMeta:
         if not path.is_file():
             raise FileNotFoundError(f"No voice named '{name}' in library at {path.parent}")
         data = json.loads(path.read_text())
+        # Drop unknown keys so older/newer schemas don't crash __init__.
+        allowed = {f for f in cls.__dataclass_fields__}
+        data = {k: v for k, v in data.items() if k in allowed}
         return cls(**data)
 
     def save(self) -> Path:

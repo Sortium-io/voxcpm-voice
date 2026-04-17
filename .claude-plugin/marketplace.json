@@ -4,15 +4,15 @@
     "name": "Sortium"
   },
   "metadata": {
-    "description": "Claude Code skill for designing, saving, and reusing voices via VoxCPM2",
-    "version": "0.2.0"
+    "description": "Claude Code skill for designing, cloning, and reusing voices via VoxCPM2",
+    "version": "0.3.0"
   },
   "plugins": [
     {
       "name": "voxcpm-voice",
       "source": "./",
-      "description": "Design any voice from text (no reference needed), save favorites to a local library, then generate new voicelines / narration in saved voices via Ultimate Cloning. YAML batches for VO banks.",
-      "version": "0.2.0",
+      "description": "Design any voice from text OR clone an existing voice from an audio clip. Save to a local library, then generate voicelines / narration via Ultimate Cloning. Steer delivery with Controllable Cloning directives. YAML batches for VO banks.",
+      "version": "0.3.0",
       "author": {
         "name": "Sortium"
       },

@@ -1,8 +1,8 @@
 # voxcpm-voice
 
-**In five minutes, you'll have a reusable cast of AI voices that sound exactly the same every time you use them.** Describe a drill sergeant, a villain, a hacker kid — whatever your project needs — and get a WAV in seconds. Pick the take you love. Then have that voice say anything you want, any time you want. Your game, app, video, or podcast gets a voice cast you can call on forever, without ever recording a single line.
+**In five minutes, you'll have a reusable cast of AI voices that sound exactly the same every time you use them.** Describe a drill sergeant, a villain, a hacker kid — or hand in an audio clip of a real voice you want to clone — and get a WAV in seconds. Pick what you love. Then have that voice say anything you want, any time you want. Your game, app, video, or podcast gets a voice cast you can call on forever.
 
-You don't need voice actors. You don't need reference audio to start. You don't need to think about TTS models or diffusion parameters or prompt engineering. You just tell Claude what you want in plain English.
+You don't need voice actors. You don't need reference audio to start (though you can use one if you have one). You don't need to think about TTS models or diffusion parameters or prompt engineering. You just tell Claude what you want in plain English.
 
 ---
 
@@ -11,14 +11,20 @@ You don't need voice actors. You don't need reference audio to start. You don't 
 **Make a voice for your hero, villain, narrator, or announcer in under a minute.**
 Ask Claude for "a gruff drill sergeant in his fifties". Get three takes to pick from. Done.
 
-**Keep the ones you like forever.**
-Say "save take 2" and that voice becomes a permanent asset in your local library. Every future line you generate in that voice will sound identical — no drift.
+**Clone a real voice from an audio clip.**
+Got a 15-second recording of a voice actor, your own voice, or any clean speech sample? Drop it in and Claude turns it into a voice in your library — same delivery every future line. Add a transcript for maximum fidelity.
 
-**Voice your entire script in that voice later.**
-Hand Claude a list of lines (or a YAML file) and it'll render the whole batch. Cloning mode locks every line to your saved reference, so even 500 lines later it's still the same character.
+**Keep the ones you like forever.**
+Designed or imported, voices become permanent assets in your local library. Every future line sounds identical — no drift.
+
+**Voice your entire script in the same voice later.**
+Hand Claude a list of lines (or a YAML file) and it'll render the whole batch. Even 500 lines later, it's still the same character.
 
 **Mix and match across scenes.**
 A YAML file can render an entire multi-character scene — drill sergeant barks, hacker girl quips, announcer punctuates the moment — all in one pass.
+
+**Steer delivery when you need a specific read.**
+"Slower and more menacing." "Urgent, hushed." "Cheerful, faster." A `direction` on a line tells the model how to deliver it without changing who's speaking.
 
 **Iterate without losing what works.**
 "Re-roll the drill sergeant, deeper this time." Your saved reference is safe; only the rolls get replaced. When a better take arrives, swap it in. When it doesn't, nothing's lost.
@@ -89,13 +95,46 @@ Render these lines for the drill sergeant:
 - "Water discipline. Check your canteens."
 ```
 
-Or a YAML file if you're working from a script — template is at `${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/templates/voicelines.yaml`. Copy it, fill in your lines, and tell Claude to render it. YAML also supports multi-voice scenes — different speakers in the same batch.
+Or a YAML file if you're working from a script — template is at `${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/templates/voicelines.yaml`. Copy it, fill in your lines, and tell Claude to render it. YAML also supports multi-voice scenes — different speakers in the same batch — and per-line `direction:` to steer delivery.
+
+## Already have a voice you want to use?
+
+If you've got a clean audio clip of a voice you want to clone — your own, a voice actor's, a sample recording — Claude can import it directly:
+
+```
+Import this audio as a new voice called Narrator_Sam:
+  file: ~/Desktop/sam-intro.mp3
+  transcript: "Hello, this is Sam reading a calibration paragraph."
+```
+
+The transcript is optional but worth including — with it, the skill uses VoxCPM's **Ultimate Cloning** to reproduce the voice with max fidelity. Without it, the skill uses **Controllable Cloning** — timbre locks, delivery is a bit more flexible.
+
+Good reference clips:
+- 10–25 seconds of clean speech
+- Minimal background noise or music
+- Delivery that matches how you'll want the voice used (calm clips make calm clones)
+
+Once imported, the voice works exactly like a designed one — generate voicelines, batch via YAML, add direction per line.
+
+## Steering delivery with `direction`
+
+When you want a voice to say something a specific way — urgent, slower, angry, whispered — add a direction:
+
+```
+Have the drill sergeant say "fall back, regroup" — urgent, hushed.
+```
+
+The skill prepends a `(direction)` tag before the line. VoxCPM's Controllable Cloning keeps the voice's timbre locked while shifting delivery. Works for both designed and imported voices.
+
+Use sparingly if you want pure reproduction of a cloned voice — direction shifts how it sounds. For "say exactly like the original", skip direction; for "say this line this way", include it.
 
 ### Prompts that work
 
 - *"Make me a cyberpunk hacker girl — early twenties, sassy, mild Japanese accent."*
 - *"I need a cold villain for a cartoon. Male, middle-aged, deliberate."*
+- *"Import this clip as my voice — here's the transcript."*
 - *"Narrate this paragraph in the grizzled detective voice."*
+- *"Have Sam say 'we need to regroup' — urgent and low."*
 - *"What voices have I saved?"*
 - *"Re-roll the drill sergeant, deeper this time."*
 
@@ -121,18 +160,26 @@ Your voice library lives at `~/voxcpm-voice/voices/`:
 
 ```
 ~/voxcpm-voice/voices/<voice_name>/
-├── voice.json        the voice's metadata and prompt
-├── reference.wav     your saved take — the anchor for future lines
-├── samples/          rolls from each design session (overwritten on re-roll)
-└── lines/            everything the voice has ever said (kept forever)
+├── voice.json        metadata, spoken transcript, imported flag, timestamps
+├── reference.wav     the anchor for future lines
+├── samples/          (designed voices only) rolls from each design session
+└── lines/            every line the voice has ever spoken (kept forever)
     └── <batch>/      optional subfolder grouping for VO banks
 ```
 
-When you re-design a voice, only `samples/` is overwritten. Your saved `reference.wav` and every line you've ever generated are safe.
+**Designed** voices get their `reference.wav` from a saved sample (`save_take.py`). Re-designing overwrites `samples/` but leaves `reference.wav` and `lines/` intact.
+
+**Imported** voices get their `reference.wav` directly from your audio file (`import_voice.py`). No `samples/` — the clip you provided is the anchor.
+
+Once `reference.wav` is there, `speak.py` treats both the same way.
 
 ## Under the hood
 
-The skill drives [VoxCPM2](https://github.com/OpenBMB/VoxCPM) in two modes. Design mode is text-only — you describe a voice and the model invents one. Cloning mode takes your saved reference WAV plus its transcript (we keep both) and locks future generations to that exact voice.
+The skill drives [VoxCPM2](https://github.com/OpenBMB/VoxCPM) in three modes, picked automatically based on what's in the library:
+
+- **Voice Design** — text-only. You describe a voice; the model invents one. Used when designing from scratch.
+- **Ultimate Cloning** — reference WAV + its transcript. Highest fidelity. Used for saved voices that have a transcript in `voice.json` (designed voices always do; imported voices have one if you gave one).
+- **Controllable Cloning** — reference WAV only. Timbre locks, delivery flexible. Used for imported voices without transcripts, or when you pass `--direction` to steer delivery.
 
 Defaults are the ones the VoxCPM paper evaluates on: `cfg_value=2.0`, `inference_timesteps=10`. A Chinese emotion directive is included by default on energetic voices because VoxCPM is bilingual and commits harder to Mandarin style tags than English equivalents (this is the kind of thing you only learn from a lot of experimentation; the skill just knows to do it).
 
@@ -142,7 +189,7 @@ Defaults are the ones the VoxCPM paper evaluates on: `cfg_value=2.0`, `inference
 
 The skill calls these behind the scenes, but they're scriptable if you want to bypass Claude.
 
-**Design:**
+**Design from text:**
 ```bash
 ~/voxcpm-voice/voxcpm-venv/bin/python \
   "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/generate_voice.py" \
@@ -152,7 +199,17 @@ The skill calls these behind the scenes, but they're scriptable if you want to b
   --takes 3
 ```
 
-**Save a take:**
+**Import from audio:**
+```bash
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/import_voice.py" \
+  --voice-name Narrator_Sam \
+  --audio ~/Desktop/sam.mp3 \
+  --text "Hello, this is Sam reading a calibration paragraph."
+```
+Omit `--text` for Controllable Cloning instead of Ultimate Cloning.
+
+**Save a take (designed voices only):**
 ```bash
 ~/voxcpm-voice/voxcpm-venv/bin/python \
   "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/save_take.py" \
@@ -163,6 +220,9 @@ The skill calls these behind the scenes, but they're scriptable if you want to b
 ```bash
 # single line
 .../speak.py --voice Drill_Sergeant --text "Get your gear and move out!"
+
+# with direction (Controllable Cloning — shifts delivery)
+.../speak.py --voice Narrator_Sam --text "..." --direction "slower, whispered, urgent"
 
 # batch
 .../speak.py --yaml path/to/voicelines.yaml

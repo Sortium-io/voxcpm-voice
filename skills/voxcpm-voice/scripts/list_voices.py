@@ -21,16 +21,31 @@ def main() -> None:
 
     print(f"[list_voices] {len(voices)} voice(s) in {LIBRARY_ROOT}\n")
     for v in voices:
-        ready = "✓ ready" if has_reference(v.name) else "✗ no reference — run save_take.py"
+        has_ref = has_reference(v.name)
+        has_transcript = bool(v.lines and any(line.strip() for line in v.lines))
+        if v.imported:
+            mode = "imported (Ultimate Cloning)" if has_transcript else "imported (Controllable Cloning)"
+        else:
+            mode = "designed"
+        if not has_ref:
+            mode += " — ✗ no reference.wav yet"
+            if not v.imported:
+                mode += " (run save_take.py)"
+
         n_samples = count_wavs(samples_dir(v.name))
         n_lines = count_wavs(lines_dir(v.name))
         print(f"  {v.name}")
-        print(f"    {ready}")
+        print(f"    mode     : {mode}")
         if v.voice_fantasy:
             print(f"    fantasy  : {v.voice_fantasy}")
         if v.emotion:
             print(f"    emotion  : {v.emotion}")
-        print(f"    takes    : {n_samples} sample(s)   lines: {n_lines} file(s)")
+        if v.imported and v.source_audio:
+            print(f"    source   : {v.source_audio}")
+        if v.imported:
+            print(f"    lines    : {n_lines} file(s) generated")
+        else:
+            print(f"    takes    : {n_samples} sample(s)   lines: {n_lines} file(s)")
         if v.reference_take is not None:
             print(f"    reference: take {v.reference_take}")
         print()

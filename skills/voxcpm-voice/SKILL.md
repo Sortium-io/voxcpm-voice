@@ -1,22 +1,28 @@
 ---
 name: voxcpm-voice
-description: Design, save, and reuse voices locally with VoxCPM2 — no reference audio needed to create a voice, and once saved the same voice can speak any new lines you throw at it. Invoke whenever the user wants to create a new voice (announcer, narrator, character, AI, villain, kid, elder, anything), pick a favorite take as a keeper, generate new voicelines or narration in an existing saved voice, or manage their voice library. Translates natural-language intent ("a gruff drill sergeant", "a bubbly hacker girl") into VoxCPM's stacked-`()` directive format. Supports YAML batches for VO banks and multi-voice scenes. Asks 2–3 clarifying questions when a description is too thin. Installs VoxCPM locally on first use.
+description: Design, import, save, and reuse voices locally with VoxCPM2. Create brand-new voices from a text description (no reference audio needed), or import an existing audio clip to clone a real voice — a friend, a voice actor recording, the user's own voice, a sample they like. Once a voice is saved, it can speak any new lines. Invoke whenever the user wants to create a new voice (announcer, narrator, character, AI, villain, kid, elder, anything), clone a voice from an audio file they already have, pick a favorite take, generate voicelines or narration in a saved voice, or manage their voice library. Translates natural-language intent into VoxCPM's directive format. Supports YAML batches for VO banks and multi-voice scenes. Asks 2–3 clarifying questions when a description is too thin. Installs VoxCPM locally on first use.
 ---
 
 # VoxCPM Voice Generator
 
-Generate any voice using VoxCPM2, save the ones worth keeping, and reuse them to voice new lines later. This skill spans three phases:
+This skill gives the user a local library of reusable voices. Voices get in the library two ways: by **designing** from a text description, or by **importing** an existing audio clip. Once a voice is in the library, `speak.py` generates arbitrary new lines in it with consistent timbre across renders.
 
-1. **Design** — create a new voice from a text description. (Voice-design mode: text-only, no reference audio needed.)
-2. **Save** — promote the best take of a designed voice to its `reference.wav` so it can be reused.
-3. **Speak** — generate arbitrary new voicelines in a saved voice. (Ultimate Cloning mode: reference + transcript = consistent voice across renders.)
+## Phases
 
-Claude picks the right phase based on what the user is asking for. The three mental cues:
+1. **Create** a voice — either
+   - **Design** from text (`generate_voice.py`), or
+   - **Import** from audio (`import_voice.py`).
+2. **Save** a designed take as the voice's reference (`save_take.py`). Imports skip this step — they become the reference directly.
+3. **Speak** new voicelines in any saved voice (`speak.py`).
+4. **List** the library (`list_voices.py`).
 
-- *"Make me a …"* / *"audition a …"* / *"try …"* → **design** (run `generate_voice.py`).
-- *"That one's good, save it"* / *"use take 2"* / *"keep that one"* → **save** (run `save_take.py`).
-- *"Have the drill sergeant say …"* / *"narrate this in the villain voice"* / *"render these lines"* → **speak** (run `speak.py`).
-- *"What voices do I have?"* → **list** (run `list_voices.py`).
+Claude picks the phase based on what the user asks for. Mental cues:
+
+- *"Make me a …"* / *"audition a …"* / *"try …"* → **design** (`generate_voice.py`).
+- *"I have this audio clip, clone it"* / *"use my voice"* / *"turn this recording into a voice"* → **import** (`import_voice.py`).
+- *"Take 2 is the one"* / *"save that"* / *"keep the first"* → **save** (`save_take.py`). Only applies to designed voices.
+- *"Have the drill sergeant say …"* / *"narrate this in Sam's voice"* / *"render these lines"* → **speak** (`speak.py`).
+- *"What voices do I have?"* → **list** (`list_voices.py`).
 
 ## Library layout
 
@@ -24,9 +30,9 @@ The skill maintains a library at `~/voxcpm-voice/voices/`:
 
 ```
 ~/voxcpm-voice/voices/<voice_name>/
-├── voice.json            metadata (prompt, sentences spoken, reference_take, timestamps)
-├── reference.wav         the chosen take — only written by save_take.py
-├── samples/              design rolls (overwritten on re-roll — don't get attached)
+├── voice.json            metadata (prompt, spoken sentences, imported flag, timestamps)
+├── reference.wav         the anchor for future lines
+├── samples/              design rolls (DESIGNED voices only; overwritten on re-roll)
 │   ├── t1.wav
 │   └── t2.wav
 └── lines/                cloned voicelines from speak.py (accumulates; never blown away)
@@ -36,38 +42,47 @@ The skill maintains a library at `~/voxcpm-voice/voices/`:
         └── on_my_mark.wav
 ```
 
-Re-designing with the same name overwrites `samples/` but leaves `reference.wav` and `lines/` alone. So the user can iterate safely on a design without losing what they already keep.
+**Designed voices**: `samples/` holds rolls; `save_take.py` picks one and writes `reference.wav`. Re-designing overwrites `samples/` but preserves `reference.wav` and `lines/`.
+
+**Imported voices**: no `samples/` — `import_voice.py` writes `reference.wav` directly from the user's audio file. `voice.json` has `imported: true` and `source_audio` recording where it came from.
+
+Either way, once `reference.wav` is present, `speak.py` works the same.
 
 ## When to invoke
 
 Any of these should trigger this skill:
 
 - "Create / make / design / audition / generate a voice …"
+- "Clone this voice" / "use my voice" / "turn this audio into a voice I can use" / "import this clip"
 - "Have the \<saved voice\> say …"
 - "Narrate this in the \<saved voice\> voice"
 - "Render these voicelines for \<voice\>"
 - "What voices have I saved?" / "list my voices"
 - "Save take N" / "keep the first one" / "use that one for future lines"
 
-**Do NOT invoke for**: voice cloning from an arbitrary reference clip the user provides (this skill only clones from voices it designed itself); long-form TTS of a paragraph unrelated to a saved voice (just use regular TTS tools).
+**Do NOT invoke for**: long-form TTS unrelated to a saved voice (use a regular TTS tool instead); arbitrary transcription or audio editing (this skill generates speech, not the reverse).
 
 ## Mental model
 
-VoxCPM2 reads `()`-wrapped prefixes as **voice conditioning**, not as speech. Voice design text looks like:
+VoxCPM2 has three generation modes; the skill picks the right one automatically based on what the voice looks like in the library.
 
+**Voice Design** (text only, no audio). Used by `generate_voice.py`. Reads `()`-wrapped prefixes as voice conditioning:
 ```
-(voice fantasy)(emotion style)(Chinese hype directive)Sentence one! Sentence two! Sentence three!
+(voice fantasy)(emotion style)(Chinese hype directive)Sentence one! Sentence two!
 ```
+Everything before the last `)` is style spec; only the sentences get spoken. Good for inventing new voices. Each render is stochastic — there's no anchor — so samples drift from each other.
 
-Everything before the last `)` is style spec; only the sentences after get spoken.
+**Ultimate Cloning** (reference audio + its transcript). Used by `speak.py` when the voice has a `lines` transcript in `voice.json`. Highest fidelity — the model reproduces every nuance of the reference: timbre, cadence, emotion, style. This is what saved voices default to.
+
+**Controllable Cloning** (reference audio, no transcript). Used by `speak.py` when `voice.json` has no transcript, or when the user passes `--direction "..."`. Timbre is locked to the reference, but `()` directives can steer delivery (speed, emotion, pitch). Changes how it sounds — use sparingly if pure reproduction matters.
 
 Three empirically-validated defaults this skill codifies:
 
-1. **Single `generate()` call per take.** All sentences joined into one text = one voice. Separate generates for separate sentences = voice drift. Voice design has no anchor.
+1. **Single `generate()` call per design take.** All sentences joined → one voice per WAV. Separate calls = drift.
 2. **Chinese emotion directives commit harder than English.** `请用极度激动和兴奋的语气大声喊` produces more actual shouting than "please shout loudly". VoxCPM2 is bilingual and weights Mandarin descriptors more strongly. On by default for energetic voices; off for calm/neutral.
 3. **Stock `cfg_value=2.0`, `inference_timesteps=10`** — the README-evaluated config. Pushing cfg higher produces artifacts, not more emotion. Leave it alone.
 
-Once a voice is *saved* (has `reference.wav`), subsequent voicelines switch to **Ultimate Cloning** — reference WAV + transcript fed together to lock the voice exactly. No drift across renders.
+Once a voice is in the library, `speak.py` renders new lines with consistent timbre — no drift, because cloning uses the saved `reference.wav` as an anchor.
 
 ## Workflow
 
@@ -123,9 +138,39 @@ Key flags:
 - `--output-dir PATH` — escape hatch for "I don't want this in the library". Skips metadata too.
 - `--dry-run` — print composed text + target paths, no generation.
 
-### Step 2: Save a take (when the user picks a favorite)
+### Step 1b: Import from audio (when the user has an existing clip)
 
-If the user says "take 2 is the one" / "save that" / "keep the first one":
+If the user says *"clone this audio"*, *"use my voice"*, *"turn this recording into a voice"*, or hands you a file, use import instead of design. No VoxCPM invocation — just preprocessing + metadata, so this is fast.
+
+**Ask for**:
+- The audio path (required).
+- A **transcript** of what's said in the clip (optional but strongly recommended — enables Ultimate Cloning for max fidelity). If the user doesn't have one, offer to transcribe it (if you have the tools), or proceed without one and note the quality tradeoff.
+- A slug name for the voice (`--voice-name`).
+
+```bash
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/import_voice.py" \
+  --voice-name "Narrator_Sam" \
+  --audio ~/Desktop/sam.mp3 \
+  --text "Hello, this is Sam reading a calibration paragraph for the tool."
+```
+
+Or with a transcript file:
+
+```bash
+... --text-file ~/Desktop/sam-transcript.txt
+```
+
+Writes `reference.wav` (mono, trimmed to 25 s) + `voice.json` with `imported: true`. The voice is immediately ready for step 3 — no save step needed.
+
+**Reference-clip tips** to share with the user when appropriate:
+- 10–25 seconds is the sweet spot. Longer clips are trimmed; shorter ones under-constrain the clone.
+- Clean speech, minimal background noise. Music or heavy effects bake into the clone.
+- Consistent delivery in the clip is what the clone inherits — if the clip is calm, the clone will sound calm by default. Add `--direction` at speak time to deviate.
+
+### Step 2: Save a designed take (when the user picks a favorite)
+
+Only for **designed** voices. If the user says "take 2 is the one" / "save that" / "keep the first one":
 
 ```bash
 ~/voxcpm-voice/voxcpm-venv/bin/python \
@@ -138,9 +183,11 @@ Copies `samples/t2.wav` to `reference.wav`, updates `voice.json`. The voice is n
 
 If the user is still re-rolling designs (no take is good yet), don't push to save. Offer to re-roll or sharpen the description instead.
 
+Imported voices don't need this — `import_voice.py` writes `reference.wav` directly.
+
 ### Step 3: Speak in a saved voice (when the user wants voicelines or narration)
 
-If the user says "have \<voice\> say X" or "render these lines for \<voice\>":
+Works identically for designed and imported voices. If the user says "have \<voice\> say X" or "render these lines for \<voice\>":
 
 **Single line:**
 
@@ -160,6 +207,16 @@ If the user says "have \<voice\> say X" or "render these lines for \<voice\>":
   --lines "Fall in!" "Show me some hustle!" "On my mark."
 ```
 
+**With a direction** (steers delivery via Controllable Cloning):
+
+```bash
+... --voice Narrator_Sam --text "..." --direction "slower, more menacing, whispered"
+```
+
+The `--direction` flag prepends `(direction)` to the text before generation. Use when the user wants a specific delivery tweak (faster, angry, excited, whispered, etc.) rather than the default reading.
+
+**Warn the user** when they use `--direction`: this shifts the voice's delivery characteristics and may drift the timbre slightly from pure cloning. For "sound exactly like the original", skip direction. For "have them say this line angrily/softly/fast/etc.", it's the right tool.
+
 **Full VO bank / multi-voice scene via YAML** (best when the user hands you a list):
 
 ```bash
@@ -174,11 +231,14 @@ YAML schema (template at `${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/templates/vo
 voice: Drill_Sergeant       # default voice for every line
 batch: training-vo          # optional subfolder under lines/
 takes: 1                    # optional default takes per line
+direction: ""               # optional default (direction) for every line
 
 lines:
   - "Get your gear and move out!"              # plain string → uses defaults
   - text: "On my mark!"
     takes: 2                                    # per-line override
+  - text: "Fall back, now."
+    direction: "urgent, hushed"                 # per-line direction override
   - voice: Arena_PA                             # per-line voice override (multi-voice scene)
     text: "DOUBLE KILL!"
 ```

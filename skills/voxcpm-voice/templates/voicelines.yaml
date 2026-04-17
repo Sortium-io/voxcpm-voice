@@ -16,16 +16,20 @@
 voice: Drill_Sergeant            # saved voice from your library
 batch: training-vo               # optional — groups output under lines/<batch>/
 takes: 1                         # optional — default takes per line
+direction: ""                    # optional — default (direction) per line; shifts delivery
 
 lines:
-  # Plain strings use the top-level voice, batch, takes defaults.
+  # Plain strings use the top-level voice, batch, takes, direction defaults.
   - "Get your gear and move out!"
   - "Show me some hustle, recruits!"
   - "Water discipline. Check your canteens."
 
-  # Or use a mapping to override per line.
+  # Use a mapping to override per line.
   - text: "On my mark!"
     takes: 2                     # roll 2 variants of this line
+
+  - text: "Fall back, regroup at the rally point."
+    direction: "urgent, hushed"  # steer delivery via Controllable Cloning
 
   - text: "Fall in!"
     batch: formation             # send this one to a different subfolder
@@ -39,6 +43,7 @@ lines:
 #     text: "Recruits! Fall in!"
 #   - voice: Hacker_Girl
 #     text: "Heh. Oldschool."
+#     direction: "smirking, low"
 #   - voice: Arena_PA
 #     text: "Match starting in three. Two. One."
 #     takes: 3

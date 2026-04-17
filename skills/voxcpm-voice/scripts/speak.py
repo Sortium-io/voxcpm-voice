@@ -56,6 +56,8 @@ class LineJob:
     text: str
     batch: str | None = None
     takes: int = 1
+    direction: str = ""  # optional (direction) directive prepended to text
+
 
 
 def parse_yaml(path: Path) -> list[LineJob]:
@@ -68,6 +70,7 @@ def parse_yaml(path: Path) -> list[LineJob]:
     default_voice = data.get("voice")
     default_batch = data.get("batch")
     default_takes = int(data.get("takes", 1))
+    default_direction = data.get("direction", "")
 
     raw_lines = data.get("lines")
     if not raw_lines:
@@ -94,6 +97,7 @@ def parse_yaml(path: Path) -> list[LineJob]:
             text=str(entry["text"]).strip(),
             batch=entry.get("batch", default_batch),
             takes=int(entry.get("takes", default_takes)),
+            direction=str(entry.get("direction", default_direction)).strip(),
         ))
     return jobs
 
@@ -111,6 +115,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--lines", nargs="+", help="Multiple lines to speak (one WAV per line).")
     ap.add_argument("--batch", default=None,
                     help="Group output under lines/<batch>/ (for --voice mode). YAML can set this too.")
+    ap.add_argument("--direction", default="",
+                    help="(direction) directive prepended to each line — e.g. 'slightly faster, angry'. "
+                         "Steers delivery via VoxCPM's Controllable Cloning. Changes timbre/energy; use "
+                         "sparingly for pure reproduction.")
     ap.add_argument("--takes", type=int, default=1, help="Takes per line (default 1).")
     ap.add_argument("--cfg-value", type=float, default=2.0, help="VoxCPM guidance (default 2.0).")
     ap.add_argument("--inference-timesteps", type=int, default=10,
@@ -131,7 +139,13 @@ def build_jobs(args: argparse.Namespace) -> list[LineJob]:
 
     texts = args.lines if args.lines else [args.text]
     return [
-        LineJob(voice=slugify(args.voice), text=t.strip(), batch=args.batch, takes=args.takes)
+        LineJob(
+            voice=slugify(args.voice),
+            text=t.strip(),
+            batch=args.batch,
+            takes=args.takes,
+            direction=args.direction.strip(),
+        )
         for t in texts if t.strip()
     ]
 
@@ -189,11 +203,13 @@ def main() -> None:
     for job in jobs:
         meta = voices_used[job.voice]
         ref = reference_path(job.voice)
-        # Ultimate Cloning: pair the reference audio with its transcript.
+        # Ultimate Cloning if we have a transcript, otherwise Controllable Cloning.
         prompt_text = " ".join(line.strip() for line in meta.lines if line.strip())
 
+        spoken = f"({job.direction}){job.text}" if job.direction else job.text
+
         kwargs = {
-            "text": job.text,
+            "text": spoken,
             "cfg_value": args.cfg_value,
             "inference_timesteps": args.inference_timesteps,
             "reference_wav_path": str(ref),
