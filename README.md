@@ -49,7 +49,7 @@ rm -rf ~/voxcpm-voice                                                          #
 
 ## Your first voice, in about a minute
 
-Open a Claude Code session and say:
+**After installing, restart Claude Code.** The skill registers on the next session. Then open a Claude Code session and say:
 
 ```
 Use voxcpm-voice. I want a gruff male drill sergeant in his fifties —
@@ -64,6 +64,62 @@ Save take 2 as the drill sergeant's reference.
 ```
 
 You just built a reusable character. The drill sergeant is now yours, forever, for any future line.
+
+### Or: run the entire fresh-install smoke test in one session
+
+Skip the restart by invoking the scripts directly. Paste this whole block into any Claude Code session on a fresh machine — it handles install, venv setup, project scaffolding, voice design, and rendered voicelines end to end, and tells you where the WAVs landed.
+
+<details>
+<summary>Fresh-install kickoff prompt (click to expand)</summary>
+
+```
+Install and smoke-test the voxcpm-voice plugin from the Sortium-io
+marketplace on this machine — end to end, no workarounds.
+
+Step 1 — install the plugin:
+  claude plugin marketplace add Sortium-io/voxcpm-voice
+  claude plugin install voxcpm-voice
+
+Step 2 — find the plugin path. It lands under one of these; discover
+the actual one with `ls` / `dir`:
+  macOS/Linux:  ~/.claude/plugins/marketplaces/voxcpm-voice/
+                ~/.claude/plugins/cache/voxcpm-voice/voxcpm-voice/<version>/
+  Windows:      %USERPROFILE%\.claude\plugins\marketplaces\voxcpm-voice\
+                %USERPROFILE%\.claude\plugins\cache\voxcpm-voice\voxcpm-voice\<version>\
+Use whichever has `skills/voxcpm-voice/scripts/` inside. Call that PLUGIN_ROOT.
+
+Step 3 — set up the venv:
+  python3 <PLUGIN_ROOT>/skills/voxcpm-voice/scripts/setup.py
+  # Windows: if your system python is 3.13+, setup exits with a
+  # copy-pasteable `py -3.12 ...` command (and a
+  # `winget install --id Python.Python.3.12 -e` hint if winget is on PATH).
+
+Step 4 — scaffold a test project (auto-creates the dir if missing):
+  <VENV_PY> <PLUGIN_ROOT>/skills/voxcpm-voice/scripts/init_project.py --path ~/voxcpm-test-run
+
+Step 5 — design a voice (model weights, ~2 GB, download on this first call):
+  <VENV_PY> <PLUGIN_ROOT>/skills/voxcpm-voice/scripts/generate_voice.py \
+    --voice-name Trailer_Voice \
+    --voice-fantasy "booming male movie-trailer announcer in his fifties, rich low chest voice, theatrical gravitas, slow deliberate pacing" \
+    --takes 1 --save-take 1
+
+Step 6 — render voicelines in that voice into the test project:
+  <VENV_PY> <PLUGIN_ROOT>/skills/voxcpm-voice/scripts/speak.py \
+    --voice Trailer_Voice \
+    --lines "In a world where silence is currency..." \
+            "One voice. One chance. One story." \
+            "Coming soon." \
+    --output-dir ~/voxcpm-test-run/vo/audio
+
+VENV_PY is:
+  macOS/Linux:  ~/voxcpm-voice/voxcpm-venv/bin/python
+  Windows:      %USERPROFILE%\voxcpm-voice\voxcpm-venv\Scripts\python.exe
+
+Handle platform path differences. Use good defaults. Don't stop to ask.
+When finished, tell me where the WAVs landed and how to play them.
+```
+
+</details>
 
 ## Put that voice to work
 
