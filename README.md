@@ -61,14 +61,31 @@ rm -rf ~/voxcpm-voice                           # optional: remove the runtime (
 
 ## Usage
 
-Just talk to Claude in natural language. The skill triggers on any voice-creation intent:
+Once the plugin's installed, just start a Claude Code session and describe the voice you want in plain English. The skill picks it up, asks a follow-up if your description is thin, then generates a WAV containing three test sentences in one consistent voice. On first run it'll spend ~2 min building the Python venv and ~1 min downloading the VoxCPM2 model; every run after that generates in under 10 seconds. Output lands in `~/voxcpm-voice/outputs/`.
 
-- *"Make me a voice that sounds like a gruff drill sergeant."*
-- *"Audition a few takes of a cyberpunk hacker girl — early twenties, sassy."*
+### Kick it off
+
+Paste this into Claude Code to try it:
+
+```
+Use the voxcpm-voice skill to audition a voice for me.
+I want a gruff male drill sergeant in his fifties — weathered
+gravelly baritone, shouted parade-ground commands, hoarse edge.
+Give me 3 takes so I can pick the best one.
+```
+
+When it finishes, `open ~/voxcpm-voice/outputs/` on macOS (or browse there on Linux) and play the three takes. If none of them nail it, tell Claude what's off — *"deeper"*, *"less hoarse"*, *"more barking"* — and it'll re-roll with a sharper prompt.
+
+### More examples
+
+Any of these will trigger the skill:
+
+- *"Make me a voice that sounds like a cyberpunk hacker girl — early twenties, sassy, mild Japanese accent."*
 - *"I need a cold villain voice for a cartoon. Male, middle-aged, deliberate."*
 - *"Generate an arena announcer for my FPS."*
+- *"Audition a few takes of a grizzled detective narrating a noir scene."*
 
-If your description is too thin, Claude will ask 2–3 targeted follow-ups (gender, age, accent, emotion, context) before generating. If it's concrete enough, Claude generates immediately.
+If your description is too thin (*"make me a villain voice"*), Claude will ask 2–3 targeted follow-ups (gender, age, accent, emotion, context) before generating. If it's concrete enough, it generates immediately.
 
 ### Direct CLI usage
 
