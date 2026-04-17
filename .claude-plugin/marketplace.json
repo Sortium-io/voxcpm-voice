@@ -1,0 +1,31 @@
+{
+  "name": "voxcpm-voice",
+  "owner": {
+    "name": "Sortium"
+  },
+  "metadata": {
+    "description": "Claude Code skill for generating any voice via VoxCPM2 voice design",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "voxcpm-voice",
+      "source": "./",
+      "description": "Generate announcer, character, narrator, AI, villain, or any voice you can describe — text-only TTS via VoxCPM2 voice design, no reference audio needed.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Sortium"
+      },
+      "keywords": [
+        "claude-code",
+        "skills",
+        "tts",
+        "voice",
+        "voxcpm",
+        "voice-design",
+        "game-audio"
+      ],
+      "category": "audio"
+    }
+  ]
+}

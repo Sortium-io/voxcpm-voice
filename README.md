@@ -31,28 +31,33 @@ The defaults codify what's been validated empirically:
 ## Install
 
 ```bash
-# Clone somewhere you like
-git clone https://github.com/Sortium-io/voxcpm-voice.git ~/projects/voxcpm-voice
-
-# Symlink it into Claude Code's skill directory
-ln -s ~/projects/voxcpm-voice ~/.claude/skills/voxcpm-voice
+claude plugin marketplace add Sortium-io/voxcpm-voice
+claude plugin install voxcpm-voice
 ```
 
-Editing the skill's SKILL.md or scripts in `~/projects/voxcpm-voice/` now updates the live skill. Claude Code picks up new/updated skills on the next conversation.
+That's it. Next time you start a Claude Code session, the skill is available. Ask for a voice in plain English and Claude will take it from there.
 
-Alternatively, clone straight into the skills directory if you don't want a symlink:
-
-```bash
-git clone https://github.com/Sortium-io/voxcpm-voice.git ~/.claude/skills/voxcpm-voice
-```
-
-First voice generation will run `scripts/setup.sh` automatically, which:
+First voice generation triggers an auto-setup:
 
 - Creates a Python venv at `~/voxcpm-voice/voxcpm-venv/`
 - Installs `voxcpm`, `soundfile`, `torchaudio`, `numpy`, `pyyaml`
-- Downloads the VoxCPM2 model weights (~2 GB) from HuggingFace on first generate
+- Downloads the VoxCPM2 model weights (~2 GB) from HuggingFace
 
-Setup is idempotent — running it again is a no-op once everything is installed.
+Subsequent runs skip all of that — setup is idempotent, weights are cached.
+
+### Updating
+
+```bash
+claude plugin update voxcpm-voice
+```
+
+### Uninstalling
+
+```bash
+claude plugin uninstall voxcpm-voice
+claude plugin marketplace remove voxcpm-voice   # optional: also forget the marketplace
+rm -rf ~/voxcpm-voice                           # optional: remove the runtime (venv + outputs)
+```
 
 ## Usage
 
@@ -67,10 +72,11 @@ If your description is too thin, Claude will ask 2–3 targeted follow-ups (gend
 
 ### Direct CLI usage
 
-The skill calls this underneath; you can invoke it directly if you want:
+The skill calls this underneath; you can invoke it directly once the plugin is installed:
 
 ```bash
-~/voxcpm-voice/voxcpm-venv/bin/python scripts/generate_voice.py \
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  ~/.claude/plugins/marketplaces/voxcpm-voice/skills/voxcpm-voice/scripts/generate_voice.py \
   --voice-name "Drill_Sergeant" \
   --voice-fantasy "gruff male drill sergeant in his fifties, weathered gravelly baritone, shouted military commands, hoarse edge" \
   --emotion "SHOUTING with parade-ground authority, hard clipped cadence, explosive bark" \

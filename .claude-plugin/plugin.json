@@ -1,0 +1,10 @@
+{
+  "name": "voxcpm-voice",
+  "description": "Generate any voice — announcer, narrator, character, AI assistant, villain, kid, elder — using VoxCPM2 voice design. Text-only TTS, no reference audio needed. Takes natural-language intent and expands into VoxCPM's stacked-directive prompt format.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Sortium"
+  },
+  "repository": "https://github.com/Sortium-io/voxcpm-voice",
+  "license": "MIT"
+}

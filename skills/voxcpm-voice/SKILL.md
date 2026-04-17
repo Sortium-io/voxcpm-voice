@@ -48,10 +48,10 @@ Three empirically-validated defaults this skill codifies:
 ### Step 1: Install VoxCPM if not already installed (idempotent)
 
 ```bash
-bash ~/.claude/skills/voxcpm-voice/scripts/setup.sh
+bash "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/setup.sh"
 ```
 
-Creates a venv at `~/voxcpm-voice/voxcpm-venv/` and installs torch + voxcpm + soundfile + numpy. Exits immediately if already installed. Takes ~2 min on first run.
+`${CLAUDE_PLUGIN_ROOT}` is the plugin's install directory — Claude Code sets it automatically. Creates a venv at `~/voxcpm-voice/voxcpm-venv/` and installs torch + voxcpm + soundfile + numpy. Exits immediately if already installed. Takes ~2 min on first run.
 
 Model weights (~2GB) download lazily on first `generate()` call — user sees HuggingFace progress when step 4 runs.
 
@@ -98,7 +98,7 @@ Build three directive strings:
 
 ```bash
 ~/voxcpm-voice/voxcpm-venv/bin/python \
-  ~/.claude/skills/voxcpm-voice/scripts/generate_voice.py \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/generate_voice.py" \
   --voice-name "Drill_Sergeant" \
   --voice-fantasy "gruff male drill sergeant in his fifties, weathered gravelly baritone, shouted military commands, hoarse edge" \
   --emotion "SHOUTING with parade-ground authority, hard clipped cadence, explosive bark" \
