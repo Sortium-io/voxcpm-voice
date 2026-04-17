@@ -1,0 +1,44 @@
+# voicelines template — batch input for scripts/speak.py
+#
+# Usage:
+#   cp voicelines.yaml my-lines.yaml   # edit freely
+#   ~/voxcpm-voice/voxcpm-venv/bin/python \
+#     $CLAUDE_PLUGIN_ROOT/skills/voxcpm-voice/scripts/speak.py \
+#     --yaml my-lines.yaml
+#
+# Output lands at ~/voxcpm-voice/voices/<voice>/lines/[<batch>/]<slug>.wav
+# (multiple takes get _t1, _t2 suffixes).
+
+# ── Single-voice VO bank ──────────────────────────────────────
+# Uncomment and fill in. `voice:` must match a saved voice name
+# (see `list_voices.py` for what's available).
+
+voice: Drill_Sergeant            # saved voice from your library
+batch: training-vo               # optional — groups output under lines/<batch>/
+takes: 1                         # optional — default takes per line
+
+lines:
+  # Plain strings use the top-level voice, batch, takes defaults.
+  - "Get your gear and move out!"
+  - "Show me some hustle, recruits!"
+  - "Water discipline. Check your canteens."
+
+  # Or use a mapping to override per line.
+  - text: "On my mark!"
+    takes: 2                     # roll 2 variants of this line
+
+  - text: "Fall in!"
+    batch: formation             # send this one to a different subfolder
+
+
+# ── Multi-voice scene (remove the block above and use this instead) ──
+#
+# batch: intro-scene
+# lines:
+#   - voice: Drill_Sergeant
+#     text: "Recruits! Fall in!"
+#   - voice: Hacker_Girl
+#     text: "Heh. Oldschool."
+#   - voice: Arena_PA
+#     text: "Match starting in three. Two. One."
+#     takes: 3

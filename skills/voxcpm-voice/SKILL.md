@@ -1,159 +1,222 @@
 ---
 name: voxcpm-voice
-description: Generate any voice the user wants — announcer, narrator, character, AI assistant, villain, kid, elder, anything — using VoxCPM2 voice design (text-only TTS, no reference audio). Takes loose natural-language input ("a gruff drill sergeant", "a bubbly anime schoolgirl", "a raspy detective") and expands it into VoxCPM's stacked-`()` directive format, producing one or more WAVs. Invoke whenever the user asks to create, test, audition, or iterate on any voice — announcers, characters, narrators, trailer voices, villain voices, AI system voices, whatever — even if they don't name VoxCPM. If the user's description is thin, ask 2-3 targeted clarifying questions (age/gender/timbre/emotion/accent/context) to dial it in before generating. Supports multiple takes per design so the user can audition variations. Installs VoxCPM locally on first use.
+description: Design, save, and reuse voices locally with VoxCPM2 — no reference audio needed to create a voice, and once saved the same voice can speak any new lines you throw at it. Invoke whenever the user wants to create a new voice (announcer, narrator, character, AI, villain, kid, elder, anything), pick a favorite take as a keeper, generate new voicelines or narration in an existing saved voice, or manage their voice library. Translates natural-language intent ("a gruff drill sergeant", "a bubbly hacker girl") into VoxCPM's stacked-`()` directive format. Supports YAML batches for VO banks and multi-voice scenes. Asks 2–3 clarifying questions when a description is too thin. Installs VoxCPM locally on first use.
 ---
 
 # VoxCPM Voice Generator
 
-Generate any voice using VoxCPM2's voice design mode — text-only, no reference audio required. This skill handles three things the user shouldn't have to think about:
+Generate any voice using VoxCPM2, save the ones worth keeping, and reuse them to voice new lines later. This skill spans three phases:
 
-1. **Translation**: user says "a gruff drill sergeant"; this skill expands that into the `(concrete voice description)(emotion style)(Chinese hype directive)sentence1! sentence2! sentence3!` format VoxCPM needs.
-2. **Clarification**: if the user's description is too loose to produce a distinctive voice, ask 2-3 focused questions before generating.
-3. **Execution**: one or many takes, consistent voice within each WAV, silence-padded sentence boundaries, output WAVs with sane names.
+1. **Design** — create a new voice from a text description. (Voice-design mode: text-only, no reference audio needed.)
+2. **Save** — promote the best take of a designed voice to its `reference.wav` so it can be reused.
+3. **Speak** — generate arbitrary new voicelines in a saved voice. (Ultimate Cloning mode: reference + transcript = consistent voice across renders.)
+
+Claude picks the right phase based on what the user is asking for. The three mental cues:
+
+- *"Make me a …"* / *"audition a …"* / *"try …"* → **design** (run `generate_voice.py`).
+- *"That one's good, save it"* / *"use take 2"* / *"keep that one"* → **save** (run `save_take.py`).
+- *"Have the drill sergeant say …"* / *"narrate this in the villain voice"* / *"render these lines"* → **speak** (run `speak.py`).
+- *"What voices do I have?"* → **list** (run `list_voices.py`).
+
+## Library layout
+
+The skill maintains a library at `~/voxcpm-voice/voices/`:
+
+```
+~/voxcpm-voice/voices/<voice_name>/
+├── voice.json            metadata (prompt, sentences spoken, reference_take, timestamps)
+├── reference.wav         the chosen take — only written by save_take.py
+├── samples/              design rolls (overwritten on re-roll — don't get attached)
+│   ├── t1.wav
+│   └── t2.wav
+└── lines/                cloned voicelines from speak.py (accumulates; never blown away)
+    ├── get_your_gear_and_move_out.wav
+    └── <batch>/
+        ├── fall_in.wav
+        └── on_my_mark.wav
+```
+
+Re-designing with the same name overwrites `samples/` but leaves `reference.wav` and `lines/` alone. So the user can iterate safely on a design without losing what they already keep.
 
 ## When to invoke
 
-Invoke this skill whenever the user wants to create, test, audition, or iterate on a voice sample of any kind:
+Any of these should trigger this skill:
 
-- Game announcer / hero-shooter PA / arena voice
-- Character voices (villain, sidekick, mentor, kid, elder, creature)
-- Narrator / trailer / audiobook voice
-- AI system voice / virtual assistant / synthetic operator
-- Mascot, radio DJ, newscaster, drill sergeant, ghost, anything
+- "Create / make / design / audition / generate a voice …"
+- "Have the \<saved voice\> say …"
+- "Narrate this in the \<saved voice\> voice"
+- "Render these voicelines for \<voice\>"
+- "What voices have I saved?" / "list my voices"
+- "Save take N" / "keep the first one" / "use that one for future lines"
 
-Also invoke when the user says things like "make a voice that sounds like X", "generate a voice", "create a VO sample", "audition some voice ideas", or similar — even if they don't name VoxCPM.
+**Do NOT invoke for**: voice cloning from an arbitrary reference clip the user provides (this skill only clones from voices it designed itself); long-form TTS of a paragraph unrelated to a saved voice (just use regular TTS tools).
 
-**Do NOT invoke for**: voice cloning from a reference clip (this is voice-design only — point them at a batch-YAML cloning workflow if they need that), long-form narration or full VO bank generation (this skill is scoped to short audition samples), or general TTS of arbitrary long text.
+## Mental model
 
-## Mental model — why this approach
-
-The core trick: VoxCPM2 reads `()`-wrapped prefixes as **voice conditioning**, not as speech. So the text passed to the model looks like:
+VoxCPM2 reads `()`-wrapped prefixes as **voice conditioning**, not as speech. Voice design text looks like:
 
 ```
-(concrete voice description)(emotion / style directive)(Chinese hype directive)Sentence one! Sentence two! Sentence three!
+(voice fantasy)(emotion style)(Chinese hype directive)Sentence one! Sentence two! Sentence three!
 ```
 
-VoxCPM treats everything before the last `)` as style spec and only speaks what follows.
+Everything before the last `)` is style spec; only the sentences after get spoken.
 
 Three empirically-validated defaults this skill codifies:
 
-1. **Single `generate()` call per take.** All sentences joined into one text = one voice. Separate generates for separate sentences = voice drift (no anchor locks timbre across calls in voice-design mode).
+1. **Single `generate()` call per take.** All sentences joined into one text = one voice. Separate generates for separate sentences = voice drift. Voice design has no anchor.
+2. **Chinese emotion directives commit harder than English.** `请用极度激动和兴奋的语气大声喊` produces more actual shouting than "please shout loudly". VoxCPM2 is bilingual and weights Mandarin descriptors more strongly. On by default for energetic voices; off for calm/neutral.
+3. **Stock `cfg_value=2.0`, `inference_timesteps=10`** — the README-evaluated config. Pushing cfg higher produces artifacts, not more emotion. Leave it alone.
 
-2. **Chinese emotion directives commit harder than English.** `请用极度激动和兴奋的语气大声喊` produces more actual shouting than "please shout loudly". VoxCPM2 is bilingual and weights Mandarin descriptors more. On by default for high-energy voices; off by default for calm/neutral voices.
-
-3. **Stock `cfg_value=2.0`, `inference_timesteps=10`** — the README-evaluated configuration. Pushing cfg higher tends to produce digital/compressed artifacts rather than more emotional commitment. Leave these alone unless the user has a specific reason.
+Once a voice is *saved* (has `reference.wav`), subsequent voicelines switch to **Ultimate Cloning** — reference WAV + transcript fed together to lock the voice exactly. No drift across renders.
 
 ## Workflow
 
-### Step 1: Install VoxCPM if not already installed (idempotent)
+### Step 0: Install VoxCPM if not already installed (idempotent)
+
+Run once, on first use. Skip if already installed:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/setup.sh"
 ```
 
-`${CLAUDE_PLUGIN_ROOT}` is the plugin's install directory — Claude Code sets it automatically. Creates a venv at `~/voxcpm-voice/voxcpm-venv/` and installs torch + voxcpm + soundfile + numpy. Exits immediately if already installed. Takes ~2 min on first run.
+`${CLAUDE_PLUGIN_ROOT}` is the plugin's install directory — Claude Code sets it automatically. Creates a venv at `~/voxcpm-voice/voxcpm-venv/` and installs torch + voxcpm + soundfile + numpy + pyyaml. Takes ~2 min on first run.
 
-Model weights (~2GB) download lazily on first `generate()` call — user sees HuggingFace progress when step 4 runs.
+Model weights (~2 GB) download lazily on the first `generate()` call.
 
-### Step 2: Gather voice intent
+### Step 1: Design a voice (when the user wants to create one)
 
-Read what the user already said. Most user requests fall on a spectrum:
+Read what the user said. If it's already concrete (age + gender + timbre + archetype), skip to generation. If it's thin, ask 1–3 focused questions:
 
-**Rich (has concrete traits)**: *"a gruff 50-something male drill sergeant, deep gravelly voice, barks commands, slightly hoarse"* → skip to step 3, enough to build a good prompt.
+- **Thin** (*"a villain voice"*) → gender? cold calculating vs theatrical? age? accent?
+- **Medium** (*"a cyberpunk hacker girl"*) → teens or twenties? sassy or cold? accent?
+- **Rich** (*"50-something gruff male drill sergeant, gravelly"*) → just generate.
 
-**Medium (has a vibe but loose)**: *"a cyberpunk hacker girl"* → ask 1-2 questions to get specific. Examples:
-- "Teen or twenties?"
-- "Playful/sassy or cold/intense?"
-- "Any accent (Japanese, British, flat American)?"
+Don't over-interrogate — 2-3 questions max. Also decide:
 
-**Thin (just an archetype)**: *"a villain voice"* → ask 2-3 focused questions before generating:
-- "Male/female/androgynous?"
-- "Cold and calculating, or theatrical and chewing scenery?"
-- "Any age/accent preference?"
+- **Takes**: default 1. For audition ("let me pick"), bump to 2–3.
+- **Emotion directive**: shouting, whispering, menacing, cheerful, etc. Omit for neutral reads.
+- **Chinese hype**: default on. Turn off for calm / clinical / narrator voices (`--no-chinese-hype`).
 
-**When in doubt, ask.** A 30-second question exchange is cheaper than generating a wrong-feeling voice and re-rolling 3 times. But don't over-interrogate — 2-3 questions max before you just try it.
-
-Also ask (only when relevant):
-- **How many takes?** Default 1. Voice design is stochastic — 3 takes let the user pick the best. Good default for "audition" requests, overkill for one-off.
-- **Any emotion/energy direction?** Shouting, whispering, menacing, cheerful, panicked, deadpan, etc. If the user says "neutral reading", turn off Chinese hype.
-- **Custom test sentences?** Default is the Harvard sentences (TTS-standard comparison set). User can supply their own lines if they're testing specific content.
-
-### Step 3: Expand the user's input into the VoxCPM prompt
-
-Build three directive strings:
-
-**voice_fantasy** (1st `()` directive): concrete traits. Age band, gender, timbre, accent, archetype. Not subjective words like "cool" or "epic" — those don't give the model enough to lock onto.
-
-| User said | Expand to |
-|---|---|
-| "gruff drill sergeant" | "gruff male drill sergeant in his fifties, weathered gravelly baritone, shouted military commands, hoarse edge" |
-| "cyberpunk hacker girl" (clarified: early 20s, sassy, mild Japanese accent) | "playful young female cyberpunk hacker in her early twenties, wry sassy tone, light Japanese-accented English, gamer energy" |
-| "deep movie trailer voice" | "booming male cinematic trailer announcer, rich low chest voice, epic theatrical gravitas, slow deliberate pacing" |
-
-**emotion** (2nd `()` directive, optional): style / energy direction. Use verbs and intensities. SHOUTING, growling, whispering, barking. Adrenaline, menace, awe, panic, amusement. Omit if the user wants a neutral reading.
-
-**chinese_hype** (3rd `()` directive, on/off): default on. Only turn off for explicitly calm/neutral/clinical voices (narrator, PSA, audiobook, AI system read).
-
-### Step 4: Run the generator
+Then generate:
 
 ```bash
 ~/voxcpm-voice/voxcpm-venv/bin/python \
   "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/generate_voice.py" \
   --voice-name "Drill_Sergeant" \
-  --voice-fantasy "gruff male drill sergeant in his fifties, weathered gravelly baritone, shouted military commands, hoarse edge" \
-  --emotion "SHOUTING with parade-ground authority, hard clipped cadence, explosive bark" \
+  --voice-fantasy "gruff male drill sergeant in his fifties, weathered gravelly baritone, hoarse edge" \
+  --emotion "SHOUTING with parade-ground authority, hard clipped cadence" \
   --takes 3
 ```
 
-Flags:
-- `--voice-name NAME` (required) — slug used for output filename. Short, no spaces. Use underscores.
-- `--voice-fantasy "..."` — the concrete voice description (1st directive).
-- `--emotion "..."` — the style/energy directive (2nd directive, optional).
-- `--no-chinese-hype` — opt out of the Chinese directive (on by default).
-- `--takes N` — number of independent renders of the same prompt (default 1). Each take is stochastically different.
-- `--lines "line1" "line2" "line3"` — override the three test sentences. Default is the Harvard sentences.
-- `--cfg-value 2.0` — VoxCPM guidance (default 2.0 = README-evaluated). Leave unless the user specifically asks.
-- `--inference-timesteps 10` — diffusion steps (default 10 = README-evaluated). Leave unless asked.
-- `--output-dir PATH` — override output location (default `~/voxcpm-voice/outputs/`).
-- `--skip-padding` — don't pad inter-sentence silence. Only use if the user is debugging.
-- `--dry-run` — print the composed text and output paths without invoking the model. Useful for showing the user what prompt will be sent.
+Writes samples to `~/voxcpm-voice/voices/Drill_Sergeant/samples/t1.wav` etc. + `voice.json`. On macOS, `open ~/voxcpm-voice/voices/Drill_Sergeant/samples/` to play them.
 
-Output naming:
-- Single take: `<voice_name>.wav`
-- Multiple takes: `<voice_name>_t1.wav`, `<voice_name>_t2.wav`, ...
+Key flags:
 
-### Step 5: Report + offer next moves
+- `--voice-name NAME` (required) — slug; becomes the library folder name.
+- `--voice-fantasy "..."` — 1st `()` directive. Concrete traits: age, gender, timbre, accent.
+- `--emotion "..."` — 2nd `()` directive. Verbs + intensities.
+- `--no-chinese-hype` — opt out of the Mandarin directive.
+- `--takes N` — independent renders (stochastic — each is different).
+- `--lines "a" "b" "c"` — override the Harvard test sentences (default).
+- `--save-take N` — promote take N to `reference.wav` in the same invocation (shortcut; skips step 2).
+- `--cfg-value` / `--inference-timesteps` — leave at defaults unless the user asks.
+- `--output-dir PATH` — escape hatch for "I don't want this in the library". Skips metadata too.
+- `--dry-run` — print composed text + target paths, no generation.
 
-Tell the user the output path(s). On macOS, `open ~/voxcpm-voice/outputs/` opens the folder in Finder.
+### Step 2: Save a take (when the user picks a favorite)
 
-Then offer the obvious next steps without listing them all — pick the one that matches the situation:
+If the user says "take 2 is the one" / "save that" / "keep the first one":
 
-- **If takes > 1**: "Which take do you like? Re-roll, keep iterating on the prompt, or move on?"
-- **If takes = 1 and it sounded off**: "Want to re-roll (voice design is stochastic), sharpen the description, or try a different emotion directive?"
-- **If it nailed it**: "Want to generate more takes for variation, or move on to the next voice?"
+```bash
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/save_take.py" \
+  --name Drill_Sergeant \
+  --take 2
+```
+
+Copies `samples/t2.wav` to `reference.wav`, updates `voice.json`. The voice is now ready for step 3.
+
+If the user is still re-rolling designs (no take is good yet), don't push to save. Offer to re-roll or sharpen the description instead.
+
+### Step 3: Speak in a saved voice (when the user wants voicelines or narration)
+
+If the user says "have \<voice\> say X" or "render these lines for \<voice\>":
+
+**Single line:**
+
+```bash
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/speak.py" \
+  --voice Drill_Sergeant \
+  --text "Get your gear and move out!"
+```
+
+**Multiple lines, one voice:**
+
+```bash
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/speak.py" \
+  --voice Drill_Sergeant \
+  --lines "Fall in!" "Show me some hustle!" "On my mark."
+```
+
+**Full VO bank / multi-voice scene via YAML** (best when the user hands you a list):
+
+```bash
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/speak.py" \
+  --yaml path/to/voicelines.yaml
+```
+
+YAML schema (template at `${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/templates/voicelines.yaml`):
+
+```yaml
+voice: Drill_Sergeant       # default voice for every line
+batch: training-vo          # optional subfolder under lines/
+takes: 1                    # optional default takes per line
+
+lines:
+  - "Get your gear and move out!"              # plain string → uses defaults
+  - text: "On my mark!"
+    takes: 2                                    # per-line override
+  - voice: Arena_PA                             # per-line voice override (multi-voice scene)
+    text: "DOUBLE KILL!"
+```
+
+If the user hands you many voicelines or wants a scene across multiple voices, **prefer the YAML path** — copy the template, fill it in, pass it to `speak.py --yaml`. It's one model load for the whole batch instead of one per line.
+
+Output lands at `~/voxcpm-voice/voices/<voice>/lines/[<batch>/]<slug>.wav`.
+
+**Important preconditions:**
+
+- The voice must exist in the library (`voice.json` present).
+- `reference.wav` must be set (user has to have saved a take first).
+
+If either is missing, `speak.py` exits with a clear error. Steer the user to step 1 or step 2 as appropriate.
+
+### Step 4: List saved voices (when the user wants to see their library)
+
+```bash
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/list_voices.py"
+```
+
+Shows each voice, its fantasy + emotion, whether a reference is set, and sample/line counts. Use this when the user asks "what voices do I have?" or when they name a voice you're not sure exists.
 
 ## Prompting rules of thumb (for when you're iterating with the user)
 
-**Concrete traits beat subjective ones.** "Baritone around 100 Hz, nasal resonance, slight Brooklyn accent, mid-forties" gives the model more to lock onto than "cool deep voice". If the output sounds generic, add more concrete traits to the fantasy string.
+**Concrete traits beat subjective ones.** *"Baritone around 100 Hz, nasal resonance, slight Brooklyn accent, mid-forties"* gives the model more to lock onto than *"cool deep voice"*. If the output sounds generic, add more concrete traits to `--voice-fantasy`.
 
-**Emotion lives in the directive, not the cfg knob.** Voice feels flat? Strengthen the emotion phrase ("SHOUTING with explosive adrenaline" → "barking at full volume, jaw-forward shouted bark, parade-ground intensity"), add more exclamation marks on the sentences, try inline `[quick_breath]` bursts — don't reach for higher cfg.
+**Emotion lives in the directive, not in `cfg_value`.** Voice feels flat? Strengthen the emotion phrase, add more exclamation marks, or insert `[quick_breath]` / `[breath]` tags between sentences via `--lines`. Don't touch cfg.
 
-**Chinese directives commit harder.** Counterintuitive but reliable. Default on. Turn off for calm/neutral voices (narrator, AI system, audiobook).
+**Re-rolling is free — try before editing.** Voice design is stochastic. If take 1 is close but not right, take 2 might be perfect without a single prompt change. Re-roll once before tweaking the description.
 
-**Re-rolling is free.** Voice design is stochastic. If take 1 is close but not right, take 2 might be perfect without any prompt change. Before editing the prompt, try one re-roll.
-
-**Stronger isn't always better.** If the user says "more intense" and it's already maxed, the opposite move sometimes helps — narrowing the description to fewer, more specific traits. Over-stacked directives can confuse the model.
-
-## Silence padding
-
-After generation, the script detects internal silence runs ≥200ms at amplitude <0.01 and pads any shorter than 600ms up to 600ms. Head/tail silence is preserved as-is. If a voice's natural pauses are already ≥600ms, the file is untouched.
-
-If padded silences feel unnatural (rare — usually only with slow theatrical deliveries), offer `--skip-padding`. If the opposite — sentences run together — the user's delivery produced sub-200ms gaps; add `[breath]` between sentences in `--lines` to force pauses.
+**Once saved, use speak for all new lines.** Don't re-design a voice for new lines — you'd get drift. Ultimate Cloning from the saved reference keeps the voice identical across renders.
 
 ## Common failure modes
 
-- **First run looks stuck for a minute**: `from_pretrained()` is downloading the model from HuggingFace (~2GB). Let it run.
-- **Voice sounds generic / nothing like the description**: description is too abstract. Rewrite with concrete traits (age band, gender, timbre, accent). Re-roll.
-- **Voice drifts between sentences in one file**: shouldn't happen with this skill — the generator uses a single `generate()` call. If it does, something went wrong in the script invocation; verify with `--dry-run`.
-- **Chinese directive not working**: make sure `--no-chinese-hype` wasn't set. Check the composed text with `--dry-run`.
-- **MPS/torch error on Apple Silicon**: `PYTORCH_ENABLE_MPS_FALLBACK=1` is set by the script; if ops still fail, edit `generate_voice.py` to force CPU (`torch.set_default_device("cpu")`).
+- **First run looks stuck**: the model is downloading (~2 GB). Let it run.
+- **`speak.py` errors "no reference.wav"**: the user hasn't saved a take yet. Run `save_take.py` first.
+- **Voice drifts between lines in `speak` output**: shouldn't happen — Ultimate Cloning anchors to reference + transcript. If it does, check `voice.json` — the `lines` field should list what's actually spoken in `reference.wav`.
+- **Voice sounds generic in design**: description too abstract. Add concrete traits; re-roll.
+- **Apple Silicon `torch` / MPS error**: `PYTORCH_ENABLE_MPS_FALLBACK=1` is set. If it still fails, the user can edit the script to force CPU.

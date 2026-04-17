@@ -1,24 +1,45 @@
 # voxcpm-voice
 
-A Claude Code skill for generating any voice — announcer, narrator, character, AI assistant, villain, kid, elder — using [VoxCPM2](https://github.com/OpenBMB/VoxCPM) in voice-design mode (text-only TTS, no reference audio required).
+A Claude Code skill that designs, saves, and reuses voices using [VoxCPM2](https://github.com/OpenBMB/VoxCPM). Describe a voice in plain English, pick your favorite take, then generate any new voicelines or narration in that voice — it'll sound the same every time.
 
-You describe what you want in plain English. The skill expands your description into VoxCPM's stacked `()` directive format, runs the model, and writes a WAV you can drop into your game / app / project.
+No reference audio needed to *create* a voice. Once you save one, it becomes a reusable asset in a local library.
 
 ## What it does
 
-Given an intent like *"a gruff drill sergeant"*, the skill:
+Three phases, picked automatically based on what you ask Claude:
 
-1. **Asks 2–3 clarifying questions** if the description is thin (age, accent, emotion, context) — or skips straight to generation if you already provided concrete traits.
-2. **Expands your description** into the format VoxCPM needs: `(voice_fantasy)(emotion_style)(chinese_hype_directive)sentence1! sentence2! sentence3!`
-3. **Runs a single `generate()` call per take** so the voice stays consistent across all three sentences in a single WAV (no drift).
-4. **Silence-pads sentence boundaries** to 600ms so the takes feel like takes, not a monologue.
-5. Writes to `~/voxcpm-voice/outputs/<voice_name>.wav` (or `_t1.wav`, `_t2.wav` for multi-take runs).
+1. **Design a voice** — describe what you want (*"a gruff drill sergeant"*), and the skill expands that into VoxCPM's stacked-directive format and generates N takes. Voice-design mode: text-only, no reference audio required.
+2. **Save a take** — once you hear a take you like, tell Claude *"keep take 2"* and the skill promotes it to the voice's `reference.wav`. That voice is now a reusable asset in your library.
+3. **Speak in a saved voice** — later, *"have the drill sergeant say 'get your gear and move out'"* or *"render these 20 training lines for the drill sergeant"* and the skill uses VoxCPM's **Ultimate Cloning** (reference audio + transcript) to generate new lines that sound *exactly* like your saved voice. No drift across renders.
+
+Supports YAML batches for full VO banks (one voice, many lines) and multi-voice scenes.
 
 The defaults codify what's been validated empirically:
 
-- `cfg_value=2.0`, `inference_timesteps=10` — the VoxCPM README-evaluated config.
+- `cfg_value=2.0`, `inference_timesteps=10` — VoxCPM's README-evaluated config.
 - Chinese emotion directive on by default — VoxCPM2 is bilingual and commits harder to Mandarin directives than English equivalents.
-- Single-generate-per-take for voice consistency.
+- Single-generate-per-take for voice consistency within a design.
+- Ultimate Cloning (reference + transcript) for consistency across generations.
+
+## Library layout
+
+The skill maintains a local library at `~/voxcpm-voice/voices/`:
+
+```
+~/voxcpm-voice/voices/<voice_name>/
+├── voice.json            metadata (prompt, spoken sentences, reference_take, timestamps)
+├── reference.wav         the chosen take — anchor for future voicelines
+├── samples/              design rolls (overwritten when re-designing this voice)
+│   ├── t1.wav
+│   └── t2.wav
+└── lines/                cloned voicelines from speak (accumulates; never blown away)
+    ├── get_your_gear_and_move_out.wav
+    └── training-vo/
+        ├── fall_in.wav
+        └── on_my_mark.wav
+```
+
+Re-designing a voice overwrites `samples/` but leaves `reference.wav` and `lines/` alone — so you can iterate on a design without losing a good reference you already saved.
 
 ## Prerequisites
 
@@ -56,14 +77,14 @@ claude plugin update voxcpm-voice
 ```bash
 claude plugin uninstall voxcpm-voice
 claude plugin marketplace remove voxcpm-voice   # optional: also forget the marketplace
-rm -rf ~/voxcpm-voice                           # optional: remove the runtime (venv + outputs)
+rm -rf ~/voxcpm-voice                           # optional: nuke the runtime (venv + voice library)
 ```
 
 ## Usage
 
-Once the plugin's installed, just start a Claude Code session and describe the voice you want in plain English. The skill picks it up, asks a follow-up if your description is thin, then generates a WAV containing three test sentences in one consistent voice. On first run it'll spend ~2 min building the Python venv and ~1 min downloading the VoxCPM2 model; every run after that generates in under 10 seconds. Output lands in `~/voxcpm-voice/outputs/`.
+Once the plugin's installed, start a Claude Code session and describe the voice you want in plain English. The skill walks you through the three phases (design → save → speak) conversationally. On first use it'll spend ~2 min building the Python venv and ~1 min downloading the VoxCPM2 model (one-time). Afterwards, design takes ~10 s per take; voicelines take 1–5 s each.
 
-### Kick it off
+### Kick it off — design your first voice
 
 Paste this into Claude Code to try it:
 
@@ -74,47 +95,98 @@ gravelly baritone, shouted parade-ground commands, hoarse edge.
 Give me 3 takes so I can pick the best one.
 ```
 
-When it finishes, `open ~/voxcpm-voice/outputs/` on macOS (or browse there on Linux) and play the three takes. If none of them nail it, tell Claude what's off — *"deeper"*, *"less hoarse"*, *"more barking"* — and it'll re-roll with a sharper prompt.
+Claude generates 3 takes into `~/voxcpm-voice/voices/Drill_Sergeant/samples/`. Play them (on macOS: `open ~/voxcpm-voice/voices/Drill_Sergeant/samples/`). When one nails it, tell Claude:
 
-### More examples
+```
+Save take 2 as the drill sergeant's reference.
+```
 
-Any of these will trigger the skill:
+That promotes `samples/t2.wav` to `reference.wav`. The voice is now a reusable asset.
+
+### Use the saved voice
+
+```
+Have the drill sergeant say: "Get your gear and move out, recruits!"
+```
+
+Claude runs Ultimate Cloning using the saved reference. Output lands at `~/voxcpm-voice/voices/Drill_Sergeant/lines/get_your_gear_and_move_out_recruits.wav`. Every line you generate sounds identical to your saved voice — no drift.
+
+### Batch VO (many lines, one voice)
+
+For a full VO bank, use the YAML template at `${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/templates/voicelines.yaml`. Copy it, edit, and tell Claude:
+
+```
+Render all the lines in ~/my-training-vo.yaml
+```
+
+One model load, all lines rendered. Supports multi-voice scenes too — per-line `voice:` override lets you mix speakers in one YAML file.
+
+### More prompts that trigger the skill
 
 - *"Make me a voice that sounds like a cyberpunk hacker girl — early twenties, sassy, mild Japanese accent."*
 - *"I need a cold villain voice for a cartoon. Male, middle-aged, deliberate."*
-- *"Generate an arena announcer for my FPS."*
-- *"Audition a few takes of a grizzled detective narrating a noir scene."*
+- *"Narrate this paragraph in the grizzled detective voice."* (requires a saved voice named `grizzled_detective` or similar)
+- *"What voices have I saved?"* → lists the library.
+- *"Re-roll the drill sergeant, deeper this time."* → re-designs under the same name; `reference.wav` stays intact.
 
-If your description is too thin (*"make me a villain voice"*), Claude will ask 2–3 targeted follow-ups (gender, age, accent, emotion, context) before generating. If it's concrete enough, it generates immediately.
+If your description is thin, Claude will ask 2–3 targeted follow-ups (gender, age, accent, emotion, context) before generating. If it's concrete enough, it generates immediately.
 
 ### Direct CLI usage
 
-The skill calls this underneath; you can invoke it directly once the plugin is installed:
+The skill calls these under the hood; you can invoke them directly once the plugin is installed. `${CLAUDE_PLUGIN_ROOT}` resolves to the plugin install path.
+
+**Design a new voice** (`generate_voice.py`):
 
 ```bash
 ~/voxcpm-voice/voxcpm-venv/bin/python \
-  ~/.claude/plugins/marketplaces/voxcpm-voice/skills/voxcpm-voice/scripts/generate_voice.py \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/generate_voice.py" \
   --voice-name "Drill_Sergeant" \
-  --voice-fantasy "gruff male drill sergeant in his fifties, weathered gravelly baritone, shouted military commands, hoarse edge" \
+  --voice-fantasy "gruff male drill sergeant in his fifties, weathered gravelly baritone, hoarse edge" \
   --emotion "SHOUTING with parade-ground authority, hard clipped cadence, explosive bark" \
   --takes 3
 ```
 
-Available flags:
+Writes `~/voxcpm-voice/voices/Drill_Sergeant/samples/t1.wav`, `t2.wav`, `t3.wav` + `voice.json`.
 
-| Flag | Default | Description |
-|---|---|---|
-| `--voice-name NAME` | _required_ | Slug for output filename (no spaces, use underscores) |
-| `--voice-fantasy "..."` | "" | Concrete voice description. Age + gender + timbre + accent + archetype. |
-| `--emotion "..."` | "" | Style/energy directive. Use verbs (SHOUTING, whispering, barking). |
-| `--no-chinese-hype` | off | Disable the Chinese emotion directive (on by default — commits harder). |
-| `--takes N` | 1 | Number of independent renders of the same prompt. |
-| `--lines "a" "b" "c"` | Harvard sentences | Override the three test sentences. |
-| `--cfg-value N` | 2.0 | VoxCPM guidance (README default). Higher = over-commits, can produce artifacts. |
-| `--inference-timesteps N` | 10 | Diffusion steps (README default). Higher = slower, marginally cleaner. |
-| `--output-dir PATH` | `~/voxcpm-voice/outputs/` | Where to write WAVs. |
-| `--skip-padding` | off | Skip inter-sentence silence padding. |
-| `--dry-run` | off | Print composed prompt + target paths without generating. |
+Flags: `--voice-name` (required), `--voice-fantasy`, `--emotion`, `--no-chinese-hype`, `--takes N`, `--lines "..." "..." "..."`, `--cfg-value`, `--inference-timesteps`, `--save-take N` (promote a take immediately), `--output-dir PATH` (bypass the library), `--skip-padding`, `--dry-run`.
+
+**Promote a take** (`save_take.py`):
+
+```bash
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/save_take.py" \
+  --name Drill_Sergeant --take 2
+```
+
+Copies `samples/t2.wav` → `reference.wav`; updates `voice.json`.
+
+**Speak in a saved voice** (`speak.py`):
+
+```bash
+# Single line
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/speak.py" \
+  --voice Drill_Sergeant --text "Get your gear and move out!"
+
+# Multiple lines, same voice
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/speak.py" \
+  --voice Drill_Sergeant --lines "Fall in!" "On my mark!" "At ease."
+
+# Full YAML batch (single or multi-voice)
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/speak.py" \
+  --yaml path/to/voicelines.yaml
+```
+
+Template at `${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/templates/voicelines.yaml`. Flags: `--voice`, `--text`, `--lines`, `--yaml`, `--batch` (subfolder under `lines/`), `--takes N`, `--cfg-value`, `--inference-timesteps`, `--skip-padding`, `--dry-run`.
+
+**List the library** (`list_voices.py`):
+
+```bash
+~/voxcpm-voice/voxcpm-venv/bin/python \
+  "${CLAUDE_PLUGIN_ROOT}/skills/voxcpm-voice/scripts/list_voices.py"
+```
 
 ## How it works
 
@@ -143,23 +215,34 @@ Everything before the last `)` is style spec; only what follows is spoken. Three
 | Cold villain | `cold male villain in his fifties, quiet measured baritone, clipped precise diction, detached menace` | _(leave empty — quiet villains lose menace if you add shout)_ — also `--no-chinese-hype` |
 | AI assistant | `neutral synthetic female assistant AI, clean even timbre, friendly professional` | _(leave empty)_ — also `--no-chinese-hype` |
 
-## File layout
+## Repo layout
 
 ```
 voxcpm-voice/
-├── SKILL.md                  # The Claude Code skill definition
-├── scripts/
-│   ├── setup.sh              # Idempotent venv installer
-│   └── generate_voice.py     # CLI generator
-└── README.md                 # This file
+├── .claude-plugin/
+│   ├── plugin.json
+│   └── marketplace.json
+├── skills/voxcpm-voice/
+│   ├── SKILL.md                      # The Claude Code skill definition
+│   ├── scripts/
+│   │   ├── setup.sh                  # Idempotent venv installer
+│   │   ├── generate_voice.py         # Design a new voice (voice-design mode)
+│   │   ├── save_take.py              # Promote a sample to reference.wav
+│   │   ├── speak.py                  # Speak in a saved voice (Ultimate Cloning)
+│   │   ├── list_voices.py            # List the library
+│   │   ├── _library.py               # Shared library helpers
+│   │   └── _silence.py               # Silence-pad post-processing
+│   └── templates/
+│       └── voicelines.yaml           # Copy this for batch speak runs
+└── README.md
 ```
 
-After setup runs, the following is created in your home directory:
+After `setup.sh` runs, the following is created in your home directory:
 
 ```
 ~/voxcpm-voice/
 ├── voxcpm-venv/              # Python venv with voxcpm + deps
-└── outputs/                  # Generated WAVs land here
+└── voices/                   # Your voice library (see "Library layout" above)
 ```
 
 ## Troubleshooting
@@ -172,7 +255,11 @@ After setup runs, the following is created in your home directory:
 
 **`torch` / MPS error on Apple Silicon.** The script sets `PYTORCH_ENABLE_MPS_FALLBACK=1`. If that's not enough, edit `generate_voice.py` to force CPU before `from_pretrained()`: `import torch; torch.set_default_device("cpu")`.
 
-**Voice drifts between sentences in a single file.** Shouldn't happen — the script does one `generate()` per take. Run with `--dry-run` to confirm the prompt composition. If it still drifts, open an issue.
+**Voice drifts between sentences in a single design take.** Shouldn't happen — `generate_voice.py` does one `generate()` per take. Run with `--dry-run` to confirm the prompt composition. If it still drifts, open an issue.
+
+**`speak.py` errors with "no reference.wav yet".** You haven't saved a take for that voice. Run `save_take.py --name <voice> --take <N>` first.
+
+**Voice sounds slightly different across voicelines in the same saved voice.** Ultimate Cloning is near-deterministic but not perfectly so. If it's off, check that `voice.json`'s `lines` field matches what's actually spoken in `reference.wav` — VoxCPM uses that transcript to lock the voice.
 
 ## Acknowledgements
 

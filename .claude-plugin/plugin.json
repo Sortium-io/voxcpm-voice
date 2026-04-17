@@ -1,7 +1,7 @@
 {
   "name": "voxcpm-voice",
-  "description": "Generate any voice — announcer, narrator, character, AI assistant, villain, kid, elder — using VoxCPM2 voice design. Text-only TTS, no reference audio needed. Takes natural-language intent and expands into VoxCPM's stacked-directive prompt format.",
-  "version": "0.1.0",
+  "description": "Design, save, and reuse voices with VoxCPM2. Create any voice from a text description (no reference audio needed), keep favorite takes in a library, and generate voicelines / narration in saved voices via Ultimate Cloning. Supports YAML batches for VO banks and multi-voice scenes.",
+  "version": "0.2.0",
   "author": {
     "name": "Sortium"
   },
